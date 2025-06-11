@@ -770,10 +770,6 @@ interface IDexFactory {
         uint256
     );
 
-    function feeTo() external view returns (address);
-
-    function feeToSetter() external view returns (address);
-
     function getPair(
         address tokenA,
         address tokenB
@@ -787,10 +783,6 @@ interface IDexFactory {
         address tokenA,
         address tokenB
     ) external returns (address pair);
-
-    function setFeeTo(address) external;
-
-    function setFeeToSetter(address) external;
 }
 
 interface IDexRouter {
@@ -821,7 +813,7 @@ interface IDexRouter {
         payable
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity);
 
-    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+    function swapExactTokensForTokensSupportingOnTransferTokens(
         uint256 amountIn,
         uint256 amountOutMin,
         address[] calldata path,
@@ -829,14 +821,14 @@ interface IDexRouter {
         uint256 deadline
     ) external;
 
-    function swapExactETHForTokensSupportingFeeOnTransferTokens(
+    function swapExactETHForTokensSupportingOnTransferTokens(
         uint256 amountOutMin,
         address[] calldata path,
         address to,
         uint256 deadline
     ) external payable;
 
-    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+    function swapExactTokensForETHSupportingOnTransferTokens(
         uint256 amountIn,
         uint256 amountOutMin,
         address[] calldata path,
@@ -845,17 +837,14 @@ interface IDexRouter {
     ) external;
 }
 
-contract DaWae is Context, ERC20, Ownable {
+contract Cigi is Context, ERC20, Ownable {
     using SafeMath for uint256;
-    mapping(address => bool) private _isExcludedFromFee;
     address payable private _taxWallet;
     uint256 firstBlock;
 
     uint64 private lastLiquifyTime;
     uint256 private sellCount = 0;
 
-    uint256 private buyFee = 20;
-    uint256 private sellFee = 20;
     uint256 private _preventSwapBefore = 1;
     uint256 private _buyCount = 0;
 
@@ -872,10 +861,7 @@ contract DaWae is Context, ERC20, Ownable {
 
     event MaxTxAmountUpdated(uint _txAmountLimit);
     event MaxWalletAmountUpdated(uint _walletAmountLimit);
-    event FeesUpdated(uint buyFee, uint sellFee);
     event SwapbackUpdated(uint _swapbackMin, uint _swapbackMax);
-    event FeeReceiverUpdated(address _taxWallet);
-    event ExcludedFromFee(address account, bool status);
     event LimitsRemoved();
     event TradingOpened();
 
@@ -885,17 +871,14 @@ contract DaWae is Context, ERC20, Ownable {
         inSwap = false;
     }
 
-    constructor() ERC20("DaWae", "DAWAE") {
+    constructor() ERC20("Cigi", "CIGI") {
         uint256 _totalSupply = 1_000_000_000 * 10 ** 18;
 
         _txAmountLimit = (_totalSupply * 20) / 1000;
         _walletAmountLimit = (_totalSupply * 20) / 1000;
         _swapbackMin = (_totalSupply * 5) / 10000;
         _swapbackMax = (_totalSupply * 200) / 10000;
-        _taxWallet = payable(0xDB877F72d669f8a7F39e1BBc7490C50Cce400CbA);
-        _isExcludedFromFee[owner()] = true;
-        _isExcludedFromFee[address(this)] = true;
-        _isExcludedFromFee[_taxWallet] = true;
+        _taxWallet = payable(address(0));
 
         _mint(_msgSender(), _totalSupply);
     }
@@ -925,16 +908,8 @@ contract DaWae is Context, ERC20, Ownable {
         tradingOpen = true;
         firstBlock = block.number;
         lastLiquifyTime = uint64(block.number);
-        _isExcludedFromFee[address(this)] = true;
-        buyFee = 0;
 
         emit TradingOpened();
-    }
-
-    function setFeeAddress(address payable newRcv) external onlyOwner {
-        _taxWallet = newRcv;
-
-        emit FeeReceiverUpdated(newRcv);
     }
 
     function maxTxSet(uint256 newTxMax) external onlyOwner {
@@ -965,30 +940,10 @@ contract DaWae is Context, ERC20, Ownable {
         emit MaxWalletAmountUpdated(totalSupply());
     }
 
-    function taxesSet(uint256 feeBuy, uint256 feeSell) external onlyOwner {
-        require(feeBuy <= 99, "Invalid buy tax value");
-        require(feeSell <= 99, "Invalid sell tax value");
-        buyFee = feeBuy;
-        sellFee = feeSell;
-        emit FeesUpdated(feeBuy, feeSell);
-    }
-
-    function removeStuckBalance() external {
-        require(msg.sender == _taxWallet, "Only fee receiver can trigger");
-        _taxWallet.transfer(address(this).balance);
-    }
-
-    function setFeeExempt(address target, bool exempt) external onlyOwner {
-        _isExcludedFromFee[target] = exempt;
-        emit ExcludedFromFee(target, exempt);
-    }
-
     function readView()
         external
         view
         returns (
-            uint256 _buyFee,
-            uint256 _sellFee,
             uint256 maxTxAmount,
             uint256 maxWalletSize,
             uint256 taxSwapThreshold,
@@ -996,8 +951,6 @@ contract DaWae is Context, ERC20, Ownable {
         )
     {
         return (
-            buyFee,
-            sellFee,
             _txAmountLimit,
             _walletAmountLimit,
             _swapbackMin,
@@ -1013,14 +966,10 @@ contract DaWae is Context, ERC20, Ownable {
         require(from != address(0), "ERC20: transfer from the zero address");
         require(to != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
-        uint256 taxAmount = 0;
         if (from != owner() && to != owner() && !inSwap) {
-            taxAmount = amount.mul(buyFee).div(100);
-
             if (
                 from == uniswapV2Pair &&
-                to != address(uniswapV2Router) &&
-                !_isExcludedFromFee[to]
+                to != address(uniswapV2Router)
             ) {
                 require(
                     amount <= _txAmountLimit,
@@ -1037,15 +986,11 @@ contract DaWae is Context, ERC20, Ownable {
                 _buyCount++;
             }
 
-            if (to != uniswapV2Pair && !_isExcludedFromFee[to]) {
+            if (to != uniswapV2Pair) {
                 require(
                     balanceOf(to) + amount <= _walletAmountLimit,
                     "Exceeds the maxWalletSize."
                 );
-            }
-
-            if (to == uniswapV2Pair && from != address(this)) {
-                taxAmount = amount.mul(sellFee).div(100);
             }
 
             uint256 contractTokenBalance = balanceOf(address(this));
@@ -1064,17 +1009,10 @@ contract DaWae is Context, ERC20, Ownable {
                     min(amount, min(contractTokenBalance, _swapbackMax))
                 );
                 uint256 contractETHBalance = address(this).balance;
-                if (contractETHBalance > 0) {
-                    sendETHToFee();
-                }
                 sellCount++;
             }
         }
-
-        if (taxAmount > 0) {
-            super._transfer(from, address(this), taxAmount);
-        }
-        super._transfer(from, to, amount.sub(taxAmount));
+        super._transfer(from, to, amount);
     }
 
     function min(uint256 a, uint256 b) private pure returns (uint256) {
@@ -1089,39 +1027,18 @@ contract DaWae is Context, ERC20, Ownable {
         return size > 0;
     }
 
-    function manualSwap() external {
-        require(
-            msg.sender == _taxWallet || msg.sender == owner(),
-            "Only fee receiver can trigger"
-        );
-        uint256 contractTokenBalance = balanceOf(address(this));
-
-        swapTokensForEth(contractTokenBalance);
-        uint256 contractETHBalance = address(this).balance;
-        if (contractETHBalance > 0) {
-            sendETHToFee();
-        }
-    }
-
     function swapTokensForEth(uint256 tokenAmount) private lockTheSwap {
         lastLiquifyTime = uint64(block.number);
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = uniswapV2Router.WETH();
         _approve(address(this), address(uniswapV2Router), tokenAmount);
-        uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uniswapV2Router.swapExactTokensForETHSupportingOnTransferTokens(
             tokenAmount,
             0,
             path,
             address(this),
             block.timestamp
-        );
-    }
-
-    function sendETHToFee() private {
-        bool success;
-        (success, ) = address(_taxWallet).call{value: address(this).balance}(
-            ""
         );
     }
 }
