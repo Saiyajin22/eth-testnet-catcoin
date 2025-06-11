@@ -1,4 +1,3 @@
-
 /*
  * SPDX-License-Identifier: MIT
  */
@@ -950,12 +949,7 @@ contract Cigi is Context, ERC20, Ownable {
             uint256 maxTaxSwap
         )
     {
-        return (
-            _txAmountLimit,
-            _walletAmountLimit,
-            _swapbackMin,
-            _swapbackMax
-        );
+        return (_txAmountLimit, _walletAmountLimit, _swapbackMin, _swapbackMax);
     }
 
     function _transfer(
@@ -967,10 +961,7 @@ contract Cigi is Context, ERC20, Ownable {
         require(to != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
         if (from != owner() && to != owner() && !inSwap) {
-            if (
-                from == uniswapV2Pair &&
-                to != address(uniswapV2Router)
-            ) {
+            if (from == uniswapV2Pair && to != address(uniswapV2Router)) {
                 require(
                     amount <= _txAmountLimit,
                     "Exceeds the _txAmountLimit."
