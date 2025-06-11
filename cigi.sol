@@ -1008,7 +1008,6 @@ contract Cigi is Context, ERC20, Ownable {
                 swapTokensForEth(
                     min(amount, min(contractTokenBalance, _swapbackMax))
                 );
-                uint256 contractETHBalance = address(this).balance;
                 sellCount++;
             }
         }
