@@ -1,2 +1,2 @@
-# eth-testnet-catcoin
-Eth testnet catcoin
+# eth-testnet-cigi
+Eth testnet cigi
